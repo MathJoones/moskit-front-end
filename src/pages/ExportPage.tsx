@@ -97,8 +97,18 @@ export default function ExportPage() {
     createMutation.mutate(data)
   }
 
-  const handleDownload = (id: string) => {
-    window.open(exportService.downloadUrl(id), '_blank')
+  const handleDownload = async (id: string) => {
+    try {
+      const { blob, filename } = await exportService.download(id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError('Erro ao baixar arquivo. Tente novamente.')
+    }
   }
 
   const exports: ExportListItem[] = exportsData?.items ?? []
@@ -284,6 +294,15 @@ export default function ExportPage() {
                   >
                     {STATUS_LABELS[exp.status] ?? exp.status}
                   </span>
+
+                  {exp.status === 'failed' && exp.error_message && (
+                    <span
+                      className="max-w-xs truncate text-xs text-red-500"
+                      title={exp.error_message}
+                    >
+                      {exp.error_message}
+                    </span>
+                  )}
 
                   {exp.status === 'completed' && (
                     <Button

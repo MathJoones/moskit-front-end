@@ -4,10 +4,23 @@ import { storage } from '@/utils/storage'
 /** Extrai a mensagem legível de um erro (AxiosError ou Error genérico) */
 export function extractErrorMessage(err: unknown, fallback = 'Erro inesperado'): string {
   if (isAxiosError(err)) {
-    const detail = err.response?.data?.detail
-    if (typeof detail === 'string') return detail
-    if (Array.isArray(detail)) return detail.map((d) => d.msg ?? d).join(', ')
-    return err.response?.data?.message ?? err.message ?? fallback
+    const data = err.response?.data
+
+    // FastAPI 422: { error: "VALIDATION_ERROR", details: [{field, message, code}] }
+    if (Array.isArray(data?.details)) {
+      return data.details.map((d: { field?: string; message: string }) =>
+        d.field ? `${d.field}: ${d.message}` : d.message
+      ).join(' | ')
+    }
+
+    // AppException: { error: "CODE", message: "..." }
+    if (typeof data?.message === 'string') return data.message
+
+    // FastAPI padrão: { detail: "..." } ou { detail: [{msg, loc}] }
+    if (typeof data?.detail === 'string') return data.detail
+    if (Array.isArray(data?.detail)) return data.detail.map((d: { msg?: string }) => d.msg ?? d).join(', ')
+
+    return err.message ?? fallback
   }
   if (err instanceof Error) return err.message
   return fallback

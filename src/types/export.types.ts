@@ -25,6 +25,7 @@ export interface ExportListItem {
   status: ExportStatus
   output_format: ExportFormat
   total_records: number | null
+  error_message: string | null
   created_at: string
 }
 

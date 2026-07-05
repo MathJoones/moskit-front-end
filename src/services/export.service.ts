@@ -18,8 +18,11 @@ export const exportService = {
     return data
   },
 
-  downloadUrl(id: string): string {
-    const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
-    return `${base}/api/v1/exports/${id}/download`
+  async download(id: string): Promise<{ blob: Blob; filename: string }> {
+    const response = await api.get(`/exports/${id}/download`, { responseType: 'blob' })
+    const disposition = response.headers['content-disposition'] ?? ''
+    const match = disposition.match(/filename[^;=\n]*=(?:(['"])(?<q>[^'"]*)\1|(?<bare>[^;\n]*))/)
+    const filename = match?.groups?.q ?? match?.groups?.bare ?? `export_${id}`
+    return { blob: response.data, filename: filename.trim() }
   },
 }
