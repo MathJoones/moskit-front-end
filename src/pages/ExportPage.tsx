@@ -3,13 +3,14 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, RefreshCw, Plus, X } from 'lucide-react'
+import { Download, RefreshCw, Plus, X, Filter } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Alert } from '@/components/ui/Alert'
 import { exportService } from '@/services/export.service'
 import { connectionService } from '@/services/connection.service'
+import { extractErrorMessage } from '@/services/api'
 import type { ExportListItem, EntityType, ExportFormat } from '@/types/export.types'
 
 // ── Schema ─────────────────────────────────────────────────
@@ -50,15 +51,35 @@ const STATUS_LABELS: Record<string, string> = {
   failed:     'Falhou',
 }
 
+interface ExportFilters {
+  status: string
+  entity_type: string
+  date_from: string
+  date_to: string
+}
+
+const EMPTY_EXPORT_FILTERS: ExportFilters = { status: '', entity_type: '', date_from: '', date_to: '' }
+
 // ── Component ──────────────────────────────────────────────
 export default function ExportPage() {
   const [showForm, setShowForm] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [exportFilters, setExportFilters] = useState<ExportFilters>(EMPTY_EXPORT_FILTERS)
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
+  const hasFilters = Object.values(exportFilters).some((v) => v !== '')
+
+  const activeFilters = {
+    status: exportFilters.status || undefined,
+    entity_type: exportFilters.entity_type || undefined,
+    date_from: exportFilters.date_from || undefined,
+    date_to: exportFilters.date_to || undefined,
+  }
+
   const { data: exportsData, isLoading: loadingExports } = useQuery({
-    queryKey: ['exports'],
-    queryFn: () => exportService.list(),
+    queryKey: ['exports', activeFilters],
+    queryFn: () => exportService.list(1, 20, activeFilters),
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? []
       const hasProcessing = items.some((e) => e.status === 'pending' || e.status === 'processing')
@@ -89,7 +110,7 @@ export default function ExportPage() {
       setShowForm(false)
       setError(null)
     },
-    onError: (err: Error) => setError(err.message ?? 'Erro ao criar exportação'),
+    onError: (err: unknown) => setError(extractErrorMessage(err, 'Erro ao criar exportação')),
   })
 
   const onSubmit = (data: ExportForm) => {
@@ -235,14 +256,87 @@ export default function ExportPage() {
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h3 className="text-sm font-semibold text-gray-700">Histórico de Exportações</h3>
-          <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['exports'] })}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
-          >
-            <RefreshCw size={13} />
-            Atualizar
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowFilters((v) => !v)}
+              className={`flex items-center gap-1.5 text-xs transition-colors ${
+                hasFilters ? 'font-medium text-indigo-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {hasFilters ? <X size={13} /> : <Filter size={13} />}
+              {hasFilters ? 'Filtros ativos' : 'Filtros'}
+            </button>
+            <button
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['exports'] })}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+            >
+              <RefreshCw size={13} /> Atualizar
+            </button>
+          </div>
         </div>
+
+        {/* Filtros */}
+        {showFilters && (
+          <div className="border-b border-gray-100 bg-gray-50 px-5 py-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Status</label>
+                <select
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs"
+                  value={exportFilters.status}
+                  onChange={(e) => setExportFilters((f) => ({ ...f, status: e.target.value }))}
+                >
+                  <option value="">Todos</option>
+                  <option value="pending">Aguardando</option>
+                  <option value="processing">Processando</option>
+                  <option value="completed">Concluído</option>
+                  <option value="failed">Falhou</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Entidade</label>
+                <select
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs"
+                  value={exportFilters.entity_type}
+                  onChange={(e) => setExportFilters((f) => ({ ...f, entity_type: e.target.value }))}
+                >
+                  <option value="">Todas</option>
+                  <option value="contact">Contatos</option>
+                  <option value="company">Empresas</option>
+                  <option value="deal">Negócios</option>
+                  <option value="activity">Atividades</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">De</label>
+                <input
+                  type="date"
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs"
+                  value={exportFilters.date_from}
+                  onChange={(e) => setExportFilters((f) => ({ ...f, date_from: e.target.value }))}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-gray-600">Até</label>
+                <input
+                  type="date"
+                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs"
+                  value={exportFilters.date_to}
+                  onChange={(e) => setExportFilters((f) => ({ ...f, date_to: e.target.value }))}
+                />
+              </div>
+            </div>
+            {hasFilters && (
+              <button
+                onClick={() => setExportFilters(EMPTY_EXPORT_FILTERS)}
+                className="mt-2 text-xs text-indigo-600 hover:underline"
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
+        )}
+
 
         {loadingExports ? (
           <div className="space-y-3 p-5">

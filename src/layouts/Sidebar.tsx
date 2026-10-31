@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   ArrowUpFromLine,
+  ArrowDownToLine,
   Plug,
   LogOut,
 } from 'lucide-react'
@@ -11,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth'
 const navItems = [
   { to: '/dashboard',   label: 'Dashboard',  icon: LayoutDashboard },
   { to: '/export',      label: 'Exportar',   icon: ArrowUpFromLine },
+  { to: '/imports',     label: 'Importar',   icon: ArrowDownToLine },
   { to: '/connections', label: 'Conexões',   icon: Plug },
 ]
 

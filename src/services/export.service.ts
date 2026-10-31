@@ -3,8 +3,14 @@ import type { PaginatedResponse } from '@/types/api.types'
 import type { ExportJob, ExportListItem, CreateExportPayload } from '@/types/export.types'
 
 export const exportService = {
-  async list(page = 1, pageSize = 20): Promise<PaginatedResponse<ExportListItem>> {
-    const { data } = await api.get('/exports', { params: { page, page_size: pageSize } })
+  async list(
+    page = 1,
+    pageSize = 20,
+    filters?: { status?: string; entity_type?: string; date_from?: string; date_to?: string },
+  ): Promise<PaginatedResponse<ExportListItem>> {
+    const { data } = await api.get('/exports', {
+      params: { page, page_size: pageSize, ...filters },
+    })
     return data
   },
 

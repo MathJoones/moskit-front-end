@@ -33,7 +33,7 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: ({ email, password }: LoginForm) => login(email, password),
     onSuccess: () => navigate(from, { replace: true }),
-    onError: () => setServerError('Credenciais inválidas. Tente novamente.'),
+    onError: () => setServerError('Server Erro 500.'),
   })
 
   if (status === 'authenticated') {

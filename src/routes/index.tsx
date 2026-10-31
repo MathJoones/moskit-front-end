@@ -6,9 +6,12 @@ import { AuthLayout } from '@/layouts/AuthLayout'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 
-const DashboardPage   = lazy(() => import('@/pages/DashboardPage'))
-const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'))
-const ExportPage      = lazy(() => import('@/pages/ExportPage'))
+const DashboardPage      = lazy(() => import('@/pages/DashboardPage'))
+const ConnectionsPage    = lazy(() => import('@/pages/ConnectionsPage'))
+const ExportPage         = lazy(() => import('@/pages/ExportPage'))
+const ImportPage         = lazy(() => import('@/pages/ImportPage'))
+const ImportWizardPage   = lazy(() => import('@/pages/ImportWizardPage'))
+const ImportDetailPage   = lazy(() => import('@/pages/ImportDetailPage'))
 
 function PageLoader() {
   return (
@@ -35,30 +38,12 @@ export function AppRoutes() {
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route
-            path="/dashboard"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <DashboardPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/connections"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <ConnectionsPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/export"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <ExportPage />
-              </Suspense>
-            }
-          />
+          <Route path="/dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+          <Route path="/connections" element={<Suspense fallback={<PageLoader />}><ConnectionsPage /></Suspense>} />
+          <Route path="/export" element={<Suspense fallback={<PageLoader />}><ExportPage /></Suspense>} />
+          <Route path="/imports" element={<Suspense fallback={<PageLoader />}><ImportPage /></Suspense>} />
+          <Route path="/imports/new" element={<Suspense fallback={<PageLoader />}><ImportWizardPage /></Suspense>} />
+          <Route path="/imports/:id" element={<Suspense fallback={<PageLoader />}><ImportDetailPage /></Suspense>} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
