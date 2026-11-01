@@ -24,8 +24,11 @@ export interface ExportListItem {
   entity_type: EntityType
   status: ExportStatus
   output_format: ExportFormat
+  output_file_name: string | null
   total_records: number | null
   error_message: string | null
+  started_at: string | null
+  completed_at: string | null
   created_at: string
 }
 

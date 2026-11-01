@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
@@ -33,7 +34,24 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: ({ email, password }: LoginForm) => login(email, password),
     onSuccess: () => navigate(from, { replace: true }),
-    onError: () => setServerError('Server Erro 500.'),
+    onError: (err: unknown) => {
+      if (isAxiosError(err)) {
+        const code = err.response?.data?.error as string | undefined
+        if (code === 'EMAIL_NOT_FOUND') {
+          setServerError('E-mail não cadastrado no sistema.')
+        } else if (code === 'WRONG_CREDENTIALS') {
+          setServerError('Senha incorreta. Verifique e tente novamente.')
+        } else if (code === 'ACCOUNT_LOCKED') {
+          setServerError('Conta bloqueada temporariamente por excesso de tentativas.')
+        } else if (err.response?.status === 401 || err.response?.status === 403) {
+          setServerError('E-mail ou senha incorretos.')
+        } else {
+          setServerError('Erro ao conectar. Tente novamente.')
+        }
+      } else {
+        setServerError('Erro ao conectar. Tente novamente.')
+      }
+    },
   })
 
   if (status === 'authenticated') {

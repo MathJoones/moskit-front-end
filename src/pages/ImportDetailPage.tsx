@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertCircle, Check, ChevronDown, ChevronLeft, Copy, Download, XCircle,
+  AlertCircle, Check, ChevronDown, ChevronLeft, Copy, Download, Plus, XCircle,
 } from 'lucide-react'
 
 import { Alert } from '@/components/ui/Alert'
@@ -53,6 +53,7 @@ export default function ImportDetailPage() {
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['import', id],
@@ -303,7 +304,7 @@ export default function ImportDetailPage() {
             {/* ProgressRing */}
             <div className="flex justify-center">
               <ProgressRing
-                value={job.progress_pct}
+                value={job.status === 'pending' ? null : job.progress_pct}
                 running={isActive}
                 tone={job.status === 'error' ? 'destructive' : job.status === 'completed' ? 'success' : 'primary'}
                 center={`${job.progress_pct}%`}
@@ -337,14 +338,36 @@ export default function ImportDetailPage() {
             </div>
 
             {/* Cancel button */}
-            {isActive && (
+            {isActive && !confirmCancel && (
               <button
-                onClick={() => cancelMutation.mutate()}
+                onClick={() => setConfirmCancel(true)}
                 disabled={cancelMutation.isPending}
                 className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
               >
                 <XCircle size={16} /> Cancelar importação
               </button>
+            )}
+            {isActive && confirmCancel && (
+              <div className="rounded-[10px] border border-red-200 bg-red-50 p-3 dark:border-red-900/40 dark:bg-red-900/10">
+                <p className="mb-2.5 text-xs text-red-700 dark:text-red-300">
+                  Tem certeza? Registros já processados não serão desfeitos.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmCancel(false)}
+                    className="flex-1 rounded-[8px] border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-white/[0.1] dark:bg-white/[0.06] dark:text-gray-300"
+                  >
+                    Não
+                  </button>
+                  <button
+                    onClick={() => { cancelMutation.mutate(); setConfirmCancel(false) }}
+                    disabled={cancelMutation.isPending}
+                    className="flex-1 rounded-[8px] bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
+                  >
+                    Sim, cancelar
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Timestamps */}
@@ -353,6 +376,24 @@ export default function ImportDetailPage() {
               {job.started_at   && <p>Processando desde: {fmtDate(job.started_at)}</p>}
               {job.completed_at && <p>Concluída: {fmtDate(job.completed_at)}</p>}
             </div>
+
+            {/* Post-completion CTAs */}
+            {isFinished && (
+              <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 dark:border-white/[0.05]">
+                <button
+                  onClick={() => navigate('/imports/new')}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-[8px] bg-brand-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600"
+                >
+                  <Plus size={13} /> Nova importação
+                </button>
+                <Link
+                  to="/imports"
+                  className="block text-center text-xs text-brand-600 transition-colors hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+                >
+                  Ver histórico de importações
+                </Link>
+              </div>
+            )}
 
           </div>
         </aside>

@@ -10,6 +10,7 @@ import {
   Plug,
   CheckCircle2,
   XCircle,
+  X,
   Clock,
   Wifi,
   WifiOff,
@@ -55,20 +56,20 @@ function formatDate(iso: string | null) {
 function TestBadge({ conn }: { conn: ApiConnection }) {
   if (conn.last_test_ok === null || !conn.last_tested_at) {
     return (
-      <span className="flex items-center gap-1 text-xs text-gray-400">
+      <span className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
         <Clock size={12} /> Não testado
       </span>
     )
   }
   if (conn.last_test_ok) {
     return (
-      <span className="flex items-center gap-1 text-xs text-green-600">
+      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-emerald-400">
         <CheckCircle2 size={12} /> OK — {formatDate(conn.last_tested_at)}
       </span>
     )
   }
   return (
-    <span className="flex items-center gap-1 text-xs text-red-500">
+    <span className="flex items-center gap-1 text-xs text-red-500 dark:text-red-400">
       <XCircle size={12} /> Falhou — {formatDate(conn.last_tested_at)}
     </span>
   )
@@ -83,16 +84,16 @@ interface ModalProps {
 
 function Modal({ title, onClose, children }: ModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-white/[0.08] dark:bg-[#1c1e26]">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-white/[0.06]">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-white">{title}</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.06] dark:hover:text-white"
             aria-label="Fechar"
           >
-            ✕
+            <X size={14} />
           </button>
         </div>
         <div className="px-6 py-5">{children}</div>
@@ -123,9 +124,13 @@ function CreateModal({ onClose }: CreateModalProps) {
         connection_type: 'moskit',
         base_url: data.base_url || undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (newConn) => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
       onClose()
+      // Auto-test in background after create
+      connectionService.test(newConn.id)
+        .then(() => queryClient.invalidateQueries({ queryKey: ['connections'] }))
+        .catch(() => { /* silent — card will show "Não testado" */ })
     },
     onError: (err: unknown) => setError(extractErrorMessage(err, 'Erro ao criar conexão')),
   })
@@ -160,12 +165,12 @@ function CreateModal({ onClose }: CreateModalProps) {
             {...register('api_key')}
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-gray-700">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
               Base URL{' '}
               <span className="text-xs font-normal text-gray-400">(opcional)</span>
             </label>
             <input
-              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500"
+              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500 dark:border-white/[0.1] dark:bg-[#20222d] dark:text-gray-100 dark:placeholder:text-gray-500"
               placeholder="https://api.moskit.com.br"
               {...register('base_url')}
             />
@@ -261,9 +266,9 @@ function EditModal({ conn, onClose }: EditModalProps) {
             {...register('api_key')}
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-gray-700">Base URL</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Base URL</label>
             <input
-              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500"
+              className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500 dark:border-white/[0.1] dark:bg-[#20222d] dark:text-gray-100 dark:placeholder:text-gray-500"
               placeholder="https://api.moskit.com.br"
               {...register('base_url')}
             />
@@ -271,7 +276,7 @@ function EditModal({ conn, onClose }: EditModalProps) {
               <p className="text-xs text-red-600">{errors.base_url.message}</p>
             )}
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
             <input type="checkbox" className="rounded" {...register('is_active')} />
             Conexão ativa
           </label>
@@ -318,11 +323,11 @@ function DeleteConfirm({ conn, onClose }: DeleteConfirmProps) {
       <div className="flex items-start gap-3">
         <AlertTriangle size={20} className="mt-0.5 shrink-0 text-red-500" />
         <div>
-          <p className="text-sm text-gray-700">
+          <p className="text-sm text-gray-700 dark:text-gray-200">
             Tem certeza que deseja excluir a conexão{' '}
             <strong>{conn.name}</strong>?
           </p>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Exportações existentes vinculadas a ela não serão afetadas, mas não
             será possível criar novas.
           </p>
@@ -362,17 +367,17 @@ function ConnectionCard({ conn, onEdit, onDelete, isAdmin }: ConnectionCardProps
   })
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/[0.06] dark:bg-[#1c1e26]">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50">
-            <Plug size={16} className="text-brand-600" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500/10">
+            <Plug size={16} className="text-brand-600 dark:text-brand-400" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-gray-800">{conn.name}</p>
+            <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{conn.name}</p>
             {conn.description && (
-              <p className="truncate text-xs text-gray-500">{conn.description}</p>
+              <p className="truncate text-xs text-gray-500 dark:text-gray-400">{conn.description}</p>
             )}
           </div>
         </div>
@@ -408,7 +413,7 @@ function ConnectionCard({ conn, onEdit, onDelete, isAdmin }: ConnectionCardProps
 
         {/* Base URL */}
         {conn.base_url && (
-          <span className="truncate text-xs text-gray-400">{conn.base_url}</span>
+          <span className="truncate text-xs text-gray-400 dark:text-gray-500">{conn.base_url}</span>
         )}
 
         {/* Último teste */}
@@ -423,8 +428,8 @@ function ConnectionCard({ conn, onEdit, onDelete, isAdmin }: ConnectionCardProps
       )}
 
       {/* Footer */}
-      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-        <span className="text-xs text-gray-400">
+      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-white/[0.05]">
+        <span className="text-xs text-gray-400 dark:text-gray-500">
           Criada em {formatDate(conn.created_at)}
         </span>
         <Button
@@ -469,8 +474,8 @@ export default function ConnectionsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">Conexões</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Conexões</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Gerencie as API Keys do Moskit CRM usadas nas exportações
             </p>
           </div>
@@ -486,21 +491,27 @@ export default function ConnectionsPage() {
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-40 animate-pulse rounded-lg bg-gray-100" />
+              <div key={i} className="h-40 animate-pulse rounded-2xl bg-gray-100 dark:bg-white/[0.04]" />
             ))}
           </div>
         ) : connections.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 py-20 text-center">
-            <Plug size={36} className="text-gray-300" />
-            <p className="mt-3 text-sm text-gray-500">Nenhuma conexão cadastrada</p>
-            <p className="text-xs text-gray-400">
-              Crie uma conexão com sua conta Moskit para exportar dados
-            </p>
-            {isAdmin && (
-              <Button className="mt-5" onClick={() => setModal('create')}>
-                <Plus size={16} />
-                Nova Conexão
-              </Button>
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 py-20 text-center dark:border-white/[0.1]">
+            <Plug size={36} className="text-gray-300 dark:text-gray-600" />
+            <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Nenhuma conexão cadastrada</p>
+            {isAdmin ? (
+              <>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  Crie uma conexão com sua conta Moskit para exportar dados
+                </p>
+                <Button className="mt-5" onClick={() => setModal('create')}>
+                  <Plus size={16} />
+                  Nova Conexão
+                </Button>
+              </>
+            ) : (
+              <p className="mt-1 max-w-xs text-xs text-gray-400 dark:text-gray-500">
+                Peça ao administrador para cadastrar uma conexão antes de importar ou exportar dados.
+              </p>
             )}
           </div>
         ) : (

@@ -53,12 +53,15 @@ export interface ImportListItem {
   name: string
   entity_type: ImportEntityType
   status: ImportStatus
+  input_file_name: string | null
   total_rows: number | null
   processed: number
   created: number
   duplicates: number
   errors: number
   progress_pct: number
+  started_at: string | null
+  completed_at: string | null
   created_at: string
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Navigate, Link } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
@@ -35,8 +35,16 @@ export default function RegisterPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<RegisterForm>({ resolver: zodResolver(registerSchema) })
+
+  const passwordValue = useWatch({ control, name: 'password', defaultValue: '' })
+  const pwdChecks = {
+    length:    passwordValue.length >= 8,
+    uppercase: /[A-Z]/.test(passwordValue),
+    number:    /[0-9]/.test(passwordValue),
+  }
 
   const mutation = useMutation({
     mutationFn: ({ full_name, email, password }: RegisterForm) =>
@@ -90,14 +98,36 @@ export default function RegisterPage() {
             {...register('email')}
           />
 
-          <Input
-            label="Senha"
-            type="password"
-            placeholder="••••••••"
-            autoComplete="new-password"
-            error={errors.password?.message}
-            {...register('password')}
-          />
+          <div>
+            <Input
+              label="Senha"
+              type="password"
+              placeholder="••••••••"
+              autoComplete="new-password"
+              error={errors.password?.message}
+              {...register('password')}
+            />
+            {passwordValue.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5 pl-0.5">
+                {[
+                  { ok: pwdChecks.length,    text: 'Mínimo 8 caracteres' },
+                  { ok: pwdChecks.uppercase, text: 'Ao menos 1 letra maiúscula' },
+                  { ok: pwdChecks.number,    text: 'Ao menos 1 número' },
+                ].map(({ ok, text }) => (
+                  <li key={text} className={`flex items-center gap-1.5 text-[11.5px] ${ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'}`}>
+                    <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-full ${ok ? 'bg-emerald-500 text-white' : 'border border-gray-300 dark:border-white/[0.2]'}`}>
+                      {ok && (
+                        <svg viewBox="0 0 10 10" fill="none" className="size-2.5">
+                          <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </span>
+                    {text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <Input
             label="Confirmar senha"

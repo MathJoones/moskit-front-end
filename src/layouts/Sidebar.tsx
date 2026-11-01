@@ -5,6 +5,7 @@ import {
   ArrowDownToLine,
   Plug,
   LogOut,
+  X,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,7 +17,11 @@ const navItems = [
   { to: '/connections', label: 'Conexões',   icon: Plug },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void
+}
+
+export function Sidebar({ onClose }: SidebarProps) {
   const { user, logout } = useAuth()
   const initials = (user?.full_name ?? user?.email ?? '?').slice(0, 1).toUpperCase()
 
@@ -28,7 +33,7 @@ export function Sidebar() {
         <span className="size-8 shrink-0 overflow-hidden rounded-[9px] bg-white shadow-sm ring-1 ring-black/[0.08] dark:ring-white/[0.1]">
           <img src="/logo.png" alt="Ollow" className="size-full scale-[1.15] object-cover" />
         </span>
-        <div className="min-w-0 leading-tight">
+        <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-[14px] font-semibold tracking-tight text-gray-900 dark:text-white">
             Ollow Automation
           </p>
@@ -36,6 +41,15 @@ export function Sidebar() {
             Importação & Exportação
           </p>
         </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Fechar menu"
+            className="lg:hidden shrink-0 rounded-[7px] p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-[#9298b2] dark:hover:bg-white/[0.06] dark:hover:text-white"
+          >
+            <X size={15} strokeWidth={1.9} />
+          </button>
+        )}
       </div>
 
       {/* ── Divisor ── */}

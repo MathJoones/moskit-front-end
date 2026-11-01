@@ -2,7 +2,7 @@ import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  Check, ChevronLeft, FileSpreadsheet, RefreshCw, Upload,
+  Check, ChevronLeft, FileSpreadsheet, HelpCircle, RefreshCw, Upload,
 } from 'lucide-react'
 
 import { Input } from '@/components/ui/Input'
@@ -247,14 +247,32 @@ export default function ImportWizardPage() {
 
   const mappedFields = mappings.filter((m) => m.target_field)
   const canSubmit = name.trim() && connectionId && file && mappedFields.length > 0
+  const selectedConn = connectionId ? (connections ?? []).find((c) => c.id === connectionId) : null
+  const untestedConn = selectedConn && !selectedConn.last_tested_at
+  const hasIdFields = mappedFields.some((m) => m.target_field === 'responsible' || m.target_field === 'stage')
+
+  const TRANSFORMER_LABELS: Record<string, string> = {
+    string: 'Texto',
+    phone:  'Telefone',
+    date:   'Data',
+    number: 'Número',
+  }
 
   const selectCls =
     'h-9 w-full rounded-[8px] border border-gray-200 bg-white px-3 text-[13px] text-gray-800 outline-none transition-colors focus:border-brand-500 dark:border-[#2e3040] dark:bg-[#20222d] dark:text-[#f4f5f8]'
 
+  // Step progress
+  const steps = [
+    { label: 'Configuração', done: !!(name.trim() && connectionId) },
+    { label: 'Arquivo',      done: !!(file && csvData) },
+    { label: 'Mapeamento',   done: mappedFields.length > 0 },
+    { label: 'Duplicatas',   done: false },
+  ]
+
   // ── Render ────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6">
+    <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6 rise-in">
 
       {/* Back nav */}
       <nav className="flex items-center gap-1 text-[14px] text-gray-500 dark:text-gray-400">
@@ -275,6 +293,37 @@ export default function ImportWizardPage() {
           Faça upload do arquivo CSV, mapeie os campos e inicie a importação para a Ollow.
         </p>
       </header>
+
+      {/* Step indicator */}
+      <div className="mt-5 flex items-center overflow-x-auto pb-1">
+        {steps.map((step, i) => {
+          const isDone   = step.done
+          const isActive = !step.done && (i === 0 || steps[i - 1]?.done)
+          return (
+            <div key={i} className="flex items-center">
+              <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                isDone   ? 'text-emerald-600 dark:text-emerald-400' :
+                isActive ? 'text-brand-700 dark:text-brand-300' :
+                           'text-gray-400 dark:text-gray-600'
+              }`}>
+                <span className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-all ${
+                  isDone   ? 'bg-emerald-500 text-white' :
+                  isActive ? 'bg-brand-500 text-white' :
+                             'border border-gray-200 text-gray-400 dark:border-white/[0.15] dark:text-gray-500'
+                }`}>
+                  {isDone ? '✓' : i + 1}
+                </span>
+                <span className="hidden sm:inline">{step.label}</span>
+              </div>
+              {i < steps.length - 1 && (
+                <div className={`mx-1 h-px w-6 shrink-0 transition-colors ${
+                  step.done ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-white/[0.08]'
+                }`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
 
       {/* Main grid */}
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -331,18 +380,26 @@ export default function ImportWizardPage() {
                   {loadingConns ? (
                     <div className="h-9 animate-pulse rounded-[8px] bg-gray-100 dark:bg-[#232530]" />
                   ) : (
-                    <select
-                      className={selectCls}
-                      value={connectionId}
-                      onChange={(e) => setConnectionId(e.target.value)}
-                    >
-                      <option value="">Selecione a conta...</option>
-                      {(connections ?? []).filter((c) => c.is_active).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}{c.last_test_ok === false ? ' ⚠' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        className={selectCls}
+                        value={connectionId}
+                        onChange={(e) => setConnectionId(e.target.value)}
+                      >
+                        <option value="">Selecione a conta...</option>
+                        {(connections ?? []).filter((c) => c.is_active).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.last_test_ok === false ? ' ⚠' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {untestedConn && (
+                        <p className="mt-1.5 flex items-start gap-1.5 rounded-[8px] bg-yellow-500/10 px-2.5 py-2 text-[11.5px] text-yellow-700 dark:text-yellow-400">
+                          <HelpCircle size={13} className="mt-px shrink-0" />
+                          Esta conexão nunca foi testada. Recomendamos testá-la antes de importar.
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -548,8 +605,11 @@ export default function ImportWizardPage() {
                                   <option key={f.value} value={f.value}>{f.label}</option>
                                 ))}
                               </select>
-                              <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500 dark:bg-white/[0.05] dark:text-gray-500">
-                                {row.transformer}
+                              <span
+                                className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500 dark:bg-white/[0.05] dark:text-gray-500"
+                                title={`Formato: ${TRANSFORMER_LABELS[row.transformer] ?? row.transformer}`}
+                              >
+                                {TRANSFORMER_LABELS[row.transformer] ?? row.transformer}
                               </span>
                             </div>
                           </td>
@@ -560,6 +620,12 @@ export default function ImportWizardPage() {
                 </table>
               </div>
 
+              {hasIdFields && (
+                <div className="mt-3 flex items-start gap-1.5 rounded-[8px] bg-blue-500/[0.08] px-3 py-2 text-[11.5px] text-blue-700 dark:text-blue-400">
+                  <HelpCircle size={13} className="mt-px shrink-0" />
+                  Campos com <strong>(ID)</strong> esperam o ID numérico da entidade na Ollow, não o nome. Ex: Responsável → <code className="rounded bg-blue-500/10 px-1">42</code>
+                </div>
+              )}
               {mappedFields.length > 0 && (
                 <p className="mt-3 text-[12px] text-gray-400 dark:text-[#9298b2]">
                   <span className="font-medium text-brand-600 dark:text-brand-300">{mappedFields.length}</span>{' '}
