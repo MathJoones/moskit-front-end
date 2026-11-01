@@ -1,50 +1,34 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, Eye, XCircle } from 'lucide-react'
+import {
+  AlertCircle, Check, ChevronDown, ChevronLeft, Copy, Download, XCircle,
+} from 'lucide-react'
 
-import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
+import { ProgressRing } from '@/components/ui/ProgressRing'
 import { importService } from '@/services/import.service'
 import { extractErrorMessage } from '@/services/api'
 import type { ImportEntityType, ImportStatus, ResultFileType } from '@/types/import.types'
 
 // ── Labels ───────────────────────────────────────────────────
+
 const ENTITY_LABELS: Record<ImportEntityType, string> = {
   contact: 'Contatos',
   company: 'Empresas',
   deal:    'Negócios',
 }
 
-const STATUS_COLORS: Record<ImportStatus, string> = {
-  pending:    'bg-yellow-100 text-yellow-800',
-  processing: 'bg-blue-100 text-blue-800',
-  completed:  'bg-green-100 text-green-800',
-  cancelled:  'bg-gray-100 text-gray-600',
-  error:      'bg-red-100 text-red-800',
-}
-
-const STATUS_LABELS: Record<ImportStatus, string> = {
-  pending:    'Aguardando',
-  processing: 'Processando...',
-  completed:  'Concluído',
-  cancelled:  'Cancelado',
-  error:      'Erro',
-}
-
-const RESULT_LABELS: Record<ResultFileType, string> = {
-  created:   'Criados',
-  duplicate: 'Duplicatas',
-  error:     'Erros',
-}
-
-const RESULT_COLORS: Record<ResultFileType, string> = {
-  created:   'text-green-700 border-green-200 bg-green-50 hover:bg-green-100',
-  duplicate: 'text-yellow-700 border-yellow-200 bg-yellow-50 hover:bg-yellow-100',
-  error:     'text-red-700 border-red-200 bg-red-50 hover:bg-red-100',
+const STATUS_CONFIG: Record<ImportStatus, { label: string; pill: string }> = {
+  pending:    { label: 'Aguardando',   pill: 'bg-yellow-500/15 text-yellow-500' },
+  processing: { label: 'Processando',  pill: 'bg-blue-500/15 text-blue-400' },
+  completed:  { label: 'Concluído',    pill: 'bg-emerald-500/15 text-emerald-400' },
+  cancelled:  { label: 'Cancelado',    pill: 'bg-gray-500/15 text-gray-400' },
+  error:      { label: 'Com erros',    pill: 'bg-orange-500/15 text-orange-400' },
 }
 
 // ── Helper ───────────────────────────────────────────────────
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -54,7 +38,15 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
 // ── Component ────────────────────────────────────────────────
+
 export default function ImportDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -72,12 +64,6 @@ export default function ImportDetailPage() {
     },
   })
 
-  const { data: preview, isLoading: loadingPreview } = useQuery({
-    queryKey: ['import-preview', id],
-    queryFn: () => importService.preview(id!),
-    enabled: showPreview && !!id,
-  })
-
   const cancelMutation = useMutation({
     mutationFn: () => importService.cancel(id!),
     onSuccess: () => {
@@ -92,15 +78,24 @@ export default function ImportDetailPage() {
       const { blob, filename } = await importService.downloadResult(id!, type)
       triggerDownload(blob, filename)
     } catch {
-      setError(`Erro ao baixar CSV de ${RESULT_LABELS[type].toLowerCase()}`)
+      const labels: Record<ResultFileType, string> = {
+        created: 'criados', duplicate: 'duplicatas', error: 'erros',
+      }
+      setError(`Erro ao baixar CSV de ${labels[type]}`)
     }
   }
 
+  // ── Loading state ────────────────────────────────────────
+
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-lg bg-gray-100" />
+      <div className="mx-auto w-full max-w-5xl px-4 pt-6 space-y-4">
+        {[160, 120, 200].map((h, i) => (
+          <div
+            key={i}
+            className="animate-pulse rounded-2xl bg-gray-100 dark:bg-white/[0.04]"
+            style={{ height: h }}
+          />
         ))}
       </div>
     )
@@ -114,163 +109,255 @@ export default function ImportDetailPage() {
     )
   }
 
-  const isActive = job.status === 'pending' || job.status === 'processing'
-  const isFinished = job.status === 'completed' || job.status === 'cancelled'
+  const isActive   = job.status === 'pending' || job.status === 'processing'
+  const isFinished = job.status === 'completed' || job.status === 'cancelled' || job.status === 'error'
+  const statusCfg  = STATUS_CONFIG[job.status]
+
+  // ── Render ───────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/imports')}
-            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          >
-            <ArrowLeft size={18} />
-          </button>
+    <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6">
+
+      {/* Back nav */}
+      <nav className="flex items-center gap-1 text-[14px] text-gray-500 dark:text-gray-400">
+        <button
+          onClick={() => navigate('/imports')}
+          className="-ml-1.5 inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-brand-600 dark:text-brand-400 transition-colors hover:bg-brand-500/10"
+        >
+          <ChevronLeft size={18} strokeWidth={2.25} /> Importações
+        </button>
+      </nav>
+
+      {/* Big header */}
+      <header className="mt-3">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">{job.name}</h2>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
-              <span>{ENTITY_LABELS[job.entity_type]}</span>
-              {job.input_file_name && <><span>·</span><span>{job.input_file_name}</span></>}
-              <span>·</span>
-              <span>{new Date(job.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
+            <h1 className="text-[28px] font-bold tracking-tight text-gray-900 dark:text-white">
+              {job.name}
+            </h1>
+            <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-400">
+              {ENTITY_LABELS[job.entity_type]}
+              {job.input_file_name && <> · {job.input_file_name}</>}
+              {' '}· {fmtDate(job.created_at)}
+            </p>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COLORS[job.status]}`}>
-            {STATUS_LABELS[job.status]}
+          <span className={`mt-1 shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${statusCfg.pill}`}>
+            {statusCfg.label}
           </span>
-          {isActive && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => cancelMutation.mutate()}
-              loading={cancelMutation.isPending}
-            >
-              <XCircle size={14} /> Cancelar
-            </Button>
-          )}
         </div>
-      </div>
+      </header>
 
-      {error && <Alert variant="error" onDismiss={() => setError(null)}>{error}</Alert>}
-      {job.error_message && <Alert variant="error">{job.error_message}</Alert>}
-
-      {/* Progresso */}
-      <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-700">Progresso</h3>
-          <span className="text-sm font-medium text-gray-800">{job.progress_pct}%</span>
+      {/* Error message from job */}
+      {job.error_message && (
+        <div className="mt-4">
+          <Alert variant="error">{job.error_message}</Alert>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${isActive ? 'bg-blue-500' : job.status === 'completed' ? 'bg-green-500' : 'bg-gray-400'}`}
-            style={{ width: `${job.progress_pct}%` }}
-          />
-        </div>
+      )}
 
-        {/* Contadores */}
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: 'Total', value: job.total_rows ?? '—', color: 'text-gray-700' },
-            { label: 'Criados', value: job.created, color: 'text-green-700' },
-            { label: 'Duplicatas', value: job.duplicates, color: 'text-yellow-700' },
-            { label: 'Erros', value: job.errors, color: 'text-red-700' },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-md border border-gray-100 bg-gray-50 p-3 text-center">
-              <p className={`text-xl font-bold ${color}`}>
-                {typeof value === 'number' ? value.toLocaleString('pt-BR') : value}
-              </p>
-              <p className="text-xs text-gray-500">{label}</p>
+      {/* Dismissable error from mutations */}
+      {error && (
+        <div className="mt-4">
+          <Alert variant="error" onDismiss={() => setError(null)}>{error}</Alert>
+        </div>
+      )}
+
+      {/* Main grid */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+
+        {/* LEFT */}
+        <div className="space-y-5">
+
+          {/* Stats section */}
+          <section>
+            <div className="mb-2">
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                Resultado
+              </span>
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 dark:border-white/[0.06] dark:bg-white/[0.04]">
+              {[
+                { label: 'Total',      value: job.total_rows ?? '—',                      color: 'text-gray-800 dark:text-gray-100' },
+                { label: 'Criados',    value: job.created,                                 color: 'text-emerald-500' },
+                { label: 'Duplicatas', value: job.duplicates,                              color: 'text-yellow-500' },
+                { label: 'Erros',      value: job.errors,                                  color: 'text-orange-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="bg-white px-4 py-3 dark:bg-[#1c1e26]">
+                  <p className="text-[10.5px] text-gray-400 dark:text-gray-500">{label}</p>
+                  <p className={`mt-0.5 font-mono text-2xl font-bold tabular-nums ${color}`}>
+                    {typeof value === 'number' ? value.toLocaleString('pt-BR') : value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
 
-      {/* Download resultados */}
-      {isFinished && (
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-3 text-sm font-semibold text-gray-700">Arquivos de Resultado</h3>
-          <div className="flex flex-wrap gap-3">
-            {(['created', 'duplicate', 'error'] as ResultFileType[]).map((type) => {
-              const count = type === 'created' ? job.created : type === 'duplicate' ? job.duplicates : job.errors
-              if (count === 0) return null
-              return (
+          {/* Download result files */}
+          {isFinished && (job.created > 0 || job.duplicates > 0 || job.errors > 0) && (
+            <section>
+              <div className="mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                  Arquivos de Resultado
+                </span>
+              </div>
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-white/[0.06] dark:bg-[#1c1e26] space-y-2">
+                {(
+                  [
+                    {
+                      type:    'created'   as ResultFileType,
+                      label:   'Criados',
+                      icon:    Check,
+                      count:   job.created,
+                      bg:      'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+                    },
+                    {
+                      type:    'duplicate' as ResultFileType,
+                      label:   'Duplicatas',
+                      icon:    Copy,
+                      count:   job.duplicates,
+                      bg:      'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400',
+                    },
+                    {
+                      type:    'error'     as ResultFileType,
+                      label:   'Com erros',
+                      icon:    AlertCircle,
+                      count:   job.errors,
+                      bg:      'bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400',
+                    },
+                  ] as const
+                ).map(({ type, label, icon: Icon, count, bg }) => {
+                  if (!count) return null
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => handleDownload(type)}
+                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors ${bg}`}
+                    >
+                      <Icon size={16} />
+                      <span className="flex-1 text-sm font-medium">{label}</span>
+                      <span className="font-mono text-sm tabular-nums">{count.toLocaleString('pt-BR')}</span>
+                      <Download size={14} className="shrink-0 opacity-60" />
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Mapping preview (collapsible) */}
+          {job.column_mappings && job.column_mappings.length > 0 && (
+            <section>
+              <div className="mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                  Mapeamento
+                </span>
+              </div>
+              <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.06] dark:bg-[#1c1e26]">
                 <button
-                  key={type}
-                  onClick={() => handleDownload(type)}
-                  className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${RESULT_COLORS[type]}`}
+                  onClick={() => setShowPreview((v) => !v)}
+                  className="flex w-full items-center justify-between p-4 text-left"
+                  aria-expanded={showPreview}
                 >
-                  <Download size={14} />
-                  {RESULT_LABELS[type]} ({count.toLocaleString('pt-BR')})
+                  <span className="text-sm font-medium text-gray-800 dark:text-white">
+                    Ver colunas mapeadas ({job.column_mappings.length})
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`text-gray-400 transition-transform duration-200 ${showPreview ? 'rotate-180' : ''}`}
+                  />
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Preview */}
-      {job.status !== 'processing' && (
-        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-          <button
-            className="flex w-full items-center justify-between px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-            onClick={() => setShowPreview((v) => !v)}
-          >
-            <span className="flex items-center gap-2"><Eye size={15} /> Preview do Mapeamento</span>
-            <span className="text-xs text-gray-400">{showPreview ? 'Ocultar' : 'Mostrar'}</span>
-          </button>
-
-          {showPreview && (
-            <div className="border-t border-gray-100 p-5">
-              {loadingPreview ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => <div key={i} className="h-10 animate-pulse rounded bg-gray-100" />)}
-                </div>
-              ) : preview && preview.rows.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="py-2 pr-4 text-left font-medium text-gray-500">#</th>
-                        <th className="py-2 pr-4 text-left font-medium text-gray-500">Status</th>
-                        <th className="py-2 pr-4 text-left font-medium text-gray-500">Dados Transformados</th>
-                        <th className="py-2 text-left font-medium text-gray-500">Erro</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {preview.rows.map((row) => (
-                        <tr key={row.row_number}>
-                          <td className="py-2 pr-4 text-gray-500">{row.row_number}</td>
-                          <td className="py-2 pr-4">
-                            {row.error ? (
-                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">erro</span>
-                            ) : (
-                              <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700">ok</span>
-                            )}
-                          </td>
-                          <td className="py-2 pr-4 max-w-xs">
-                            {row.transformed ? (
-                              <code className="block truncate text-gray-700">
-                                {JSON.stringify(row.transformed)}
-                              </code>
-                            ) : '—'}
-                          </td>
-                          <td className="py-2 text-red-600">{row.error ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">Nenhum dado de preview disponível.</p>
-              )}
-            </div>
+                {showPreview && (
+                  <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-1.5 dark:border-white/[0.05]">
+                    {job.column_mappings.map((m) => (
+                      <div key={m.csv_column} className="flex items-center gap-2 text-[12px]">
+                        <span className="font-mono rounded-md bg-gray-50 px-2 py-0.5 text-gray-700 dark:bg-white/[0.04] dark:text-[#d6d8e0]">
+                          {m.csv_column}
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <span className="text-gray-700 dark:text-gray-200">{m.target_field}</span>
+                        <span className="ml-auto font-mono text-[10px] text-gray-400 dark:text-gray-500">
+                          {m.transformer ?? 'string'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
           )}
+
         </div>
-      )}
+
+        {/* RIGHT: sticky RunPanel sidebar */}
+        <aside className="space-y-4 lg:sticky lg:top-16 lg:self-start">
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/[0.06] dark:bg-[#1c1e26] space-y-4">
+
+            {/* Status indicator */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-800 dark:text-white">Execução</span>
+              <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                <span className={`size-1.5 rounded-full ${isActive ? 'animate-pulse bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                {isActive ? 'Rodando' : 'Concluído'}
+              </span>
+            </div>
+
+            {/* ProgressRing */}
+            <div className="flex justify-center">
+              <ProgressRing
+                value={job.progress_pct}
+                running={isActive}
+                tone={job.status === 'error' ? 'destructive' : job.status === 'completed' ? 'success' : 'primary'}
+                center={`${job.progress_pct}%`}
+                caption={
+                  isActive
+                    ? `${job.processed.toLocaleString('pt-BR')} de ${job.total_rows != null ? job.total_rows.toLocaleString('pt-BR') : '?'} registros`
+                    : job.status === 'completed'
+                    ? 'Importação concluída'
+                    : statusCfg.label
+                }
+                size={128}
+                stroke={10}
+              />
+            </div>
+
+            {/* Stats mini grid */}
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-gray-100 bg-gray-100 text-center dark:border-white/[0.04] dark:bg-white/[0.04]">
+              {[
+                { label: 'Criados',    value: job.created,        color: 'text-emerald-500' },
+                { label: 'Erros',      value: job.errors,         color: 'text-orange-400' },
+                { label: 'Duplicatas', value: job.duplicates,     color: 'text-yellow-500' },
+                { label: 'Total',      value: job.total_rows ?? '—', color: 'text-gray-600 dark:text-gray-300' },
+              ].map((s) => (
+                <div key={s.label} className="bg-white px-3 py-2.5 dark:bg-[#1c1e26]">
+                  <p className={`font-mono text-base font-bold tabular-nums ${s.color}`}>
+                    {typeof s.value === 'number' ? s.value.toLocaleString('pt-BR') : s.value}
+                  </p>
+                  <p className="text-[10.5px] text-gray-400 dark:text-gray-500">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Cancel button */}
+            {isActive && (
+              <button
+                onClick={() => cancelMutation.mutate()}
+                disabled={cancelMutation.isPending}
+                className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+              >
+                <XCircle size={16} /> Cancelar importação
+              </button>
+            )}
+
+            {/* Timestamps */}
+            <div className="space-y-1 text-[12px] text-gray-400 dark:text-gray-500">
+              <p>Iniciada: {fmtDate(job.created_at)}</p>
+              {job.started_at   && <p>Processando desde: {fmtDate(job.started_at)}</p>}
+              {job.completed_at && <p>Concluída: {fmtDate(job.completed_at)}</p>}
+            </div>
+
+          </div>
+        </aside>
+
+      </div>
     </div>
   )
 }

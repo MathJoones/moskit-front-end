@@ -1,24 +1,21 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Download,
-  Upload,
-  Link2,
+  FileDown,
+  FileUp,
   Database,
-  ArrowRight,
-  Filter,
-  X,
+  RefreshCw,
+  Search,
+  ChevronDown,
 } from 'lucide-react'
 
 import { useAuth } from '@/hooks/useAuth'
-import { dashboardService } from '@/services/dashboard.service'
 import { exportService } from '@/services/export.service'
 import { importService } from '@/services/import.service'
 import type { ExportListItem } from '@/types/export.types'
 import type { ImportListItem } from '@/types/import.types'
 
-// ── Labels compartilhados ────────────────────────────────────
+// ── Labels ───────────────────────────────────────────────────
 const ENTITY_LABELS: Record<string, string> = {
   contact:  'Contatos',
   company:  'Empresas',
@@ -26,26 +23,19 @@ const ENTITY_LABELS: Record<string, string> = {
   activity: 'Atividades',
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending:    'bg-yellow-100 text-yellow-800',
-  processing: 'bg-blue-100 text-blue-800',
-  completed:  'bg-green-100 text-green-800',
-  cancelled:  'bg-gray-100 text-gray-600',
-  failed:     'bg-red-100 text-red-800',
-  error:      'bg-red-100 text-red-800',
+// ── Status ───────────────────────────────────────────────────
+const STATUS_CONFIG: Record<string, { label: string; pill: string; bar: string }> = {
+  pending:    { label: 'Aguardando',   pill: 'bg-yellow-500/15 text-yellow-400',    bar: 'bg-yellow-400' },
+  processing: { label: 'Processando',  pill: 'bg-blue-500/15 text-blue-400',       bar: 'bg-blue-400' },
+  completed:  { label: 'Sucesso',      pill: 'bg-emerald-500/15 text-emerald-400',  bar: 'bg-emerald-400' },
+  cancelled:  { label: 'Interrompida', pill: 'bg-orange-500/15 text-orange-400',   bar: 'bg-orange-400' },
+  failed:     { label: 'Com erros',    pill: 'bg-orange-500/15 text-orange-400',   bar: 'bg-orange-400' },
+  error:      { label: 'Com erros',    pill: 'bg-orange-500/15 text-orange-400',   bar: 'bg-orange-400' },
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending:    'Aguardando',
-  processing: 'Processando',
-  completed:  'Concluído',
-  cancelled:  'Cancelado',
-  failed:     'Falhou',
-  error:      'Erro',
-}
-
-// ── Tipos locais ─────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────
 type ActivityKind = 'export' | 'import'
+type TimeRange = 'today' | '3d' | '7d' | '30d' | 'all' | 'mine'
 
 interface ActivityItem {
   id: string
@@ -54,6 +44,10 @@ interface ActivityItem {
   entity_type: string
   status: string
   records: number | null
+  created: number
+  duplicates: number
+  errors: number
+  progress_pct: number
   created_at: string
 }
 
@@ -65,6 +59,10 @@ function toActivity(item: ExportListItem): ActivityItem {
     entity_type: item.entity_type,
     status: item.status,
     records: item.total_records,
+    created: item.total_records ?? 0,
+    duplicates: 0,
+    errors: 0,
+    progress_pct: item.status === 'completed' ? 100 : 0,
     created_at: item.created_at,
   }
 }
@@ -77,318 +75,367 @@ function toActivityImport(item: ImportListItem): ActivityItem {
     entity_type: item.entity_type,
     status: item.status,
     records: item.total_rows,
+    created: item.created,
+    duplicates: item.duplicates,
+    errors: item.errors,
+    progress_pct: item.progress_pct,
     created_at: item.created_at,
   }
 }
 
-// ── Filtros ──────────────────────────────────────────────────
-interface Filters {
-  kind: '' | 'export' | 'import'
-  status: string
-  entity_type: string
-  date_from: string
-  date_to: string
+// ── Date helpers ─────────────────────────────────────────────
+function groupKey(iso: string) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
-const EMPTY_FILTERS: Filters = {
-  kind: '',
-  status: '',
-  entity_type: '',
-  date_from: '',
-  date_to: '',
+function groupLabel(iso: string) {
+  const date = new Date(iso)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 86_400_000)
+  const itemDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  if (itemDay.getTime() === today.getTime()) return 'HOJE'
+  if (itemDay.getTime() === yesterday.getTime()) return 'ONTEM'
+  return date
+    .toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+    .toUpperCase()
 }
 
-// ── Stat card ────────────────────────────────────────────────
-function StatCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  color,
-}: {
-  label: string
-  value: number | string
-  sub?: string
-  icon: React.ElementType
-  color: string
-}) {
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+}
+
+function filterByRange(items: ActivityItem[], range: TimeRange): ActivityItem[] {
+  if (range === 'all' || range === 'mine') return items
+  const limits: Record<TimeRange, number> = {
+    today: 1, '3d': 3, '7d': 7, '30d': 30, all: Infinity, mine: Infinity,
+  }
+  const now = Date.now()
+  return items.filter((i) => (now - new Date(i.created_at).getTime()) / 86_400_000 < limits[range])
+}
+
+// ── Time tabs ────────────────────────────────────────────────
+const TIME_TABS: { key: TimeRange; label: string }[] = [
+  { key: 'today', label: 'Hoje' },
+  { key: '3d',    label: '3 dias' },
+  { key: '7d',    label: '7 dias' },
+  { key: '30d',   label: '30 dias' },
+  { key: 'all',   label: 'Tudo' },
+  { key: 'mine',  label: 'Só minhas' },
+]
+
+// ── Stat cell ────────────────────────────────────────────────
+function StatCell({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${color}`}>
-        <Icon size={20} className="text-white" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm text-gray-500">{label}</p>
-        <p className="mt-0.5 text-2xl font-bold text-gray-900">{value.toLocaleString('pt-BR')}</p>
-        {sub && <p className="text-xs text-gray-400">{sub}</p>}
-      </div>
+    <div>
+      <p className="text-[11px] text-gray-400 dark:text-gray-500">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-gray-800 dark:text-gray-100">
+        {typeof value === 'number' ? value.toLocaleString('pt-BR') : value}
+      </p>
     </div>
   )
 }
 
-// ── Component principal ──────────────────────────────────────
-export default function DashboardPage() {
-  const navigate = useNavigate()
-  const { user } = useAuth()
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
-  const [showFilters, setShowFilters] = useState(false)
+// ── Row ──────────────────────────────────────────────────────
+function ActivityRow({
+  item,
+  isLast,
+  userEmail,
+}: {
+  item: ActivityItem
+  isLast: boolean
+  userEmail?: string
+}) {
+  const [open, setOpen] = useState(false)
 
-  // Stats
-  const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['dashboard-stats'],
-    queryFn: dashboardService.getStats,
+  const st = STATUS_CONFIG[item.status] ?? {
+    label: item.status,
+    pill: 'bg-gray-100 text-gray-600 dark:bg-white/[0.06] dark:text-gray-400',
+    bar: 'bg-gray-300',
+  }
+  const isExport = item.kind === 'export'
+  const iconBg = isExport
+    ? 'bg-emerald-500/[0.12] text-emerald-400'
+    : 'bg-violet-500/[0.12] text-violet-400'
+  const Icon = isExport ? FileDown : FileUp
+
+  return (
+    <div
+      className={`bg-white dark:bg-[#1c1e26] ${
+        !isLast || open ? 'border-b border-gray-100 dark:border-white/[0.04]' : ''
+      }`}
+    >
+      {/* Main row */}
+      <button
+        className="relative w-full cursor-pointer px-4 py-3.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.03]"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex items-center gap-3">
+          {/* Icon */}
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconBg}`}
+          >
+            <Icon size={16} />
+          </div>
+
+          {/* Content */}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{item.name}</p>
+            <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+              {fmtTime(item.created_at)}
+              {userEmail ? ` · ${userEmail}` : ''}
+              {` · ${ENTITY_LABELS[item.entity_type] ?? item.entity_type}`}
+              {item.records !== null ? ` (${item.records.toLocaleString('pt-BR')})` : ''}
+            </p>
+          </div>
+
+          {/* Right */}
+          <div className="flex shrink-0 items-center gap-3">
+            {item.records !== null && (
+              <span className="min-w-[3ch] text-right text-base font-semibold tabular-nums text-gray-400 dark:text-gray-500">
+                {item.records.toLocaleString('pt-BR')}
+              </span>
+            )}
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${st.pill}`}>
+              {st.label}
+            </span>
+            <ChevronDown
+              size={14}
+              className={`text-gray-400 transition-transform duration-200 dark:text-gray-500 ${
+                open ? 'rotate-180' : ''
+              }`}
+            />
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="absolute bottom-0 left-0 right-0 h-[2px]">
+          <div className={`h-full ${st.bar} opacity-40`} />
+        </div>
+      </button>
+
+      {/* Expanded panel */}
+      {open && (
+        <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 dark:border-white/[0.04] dark:bg-white/[0.02]">
+          {/* Stats row 1: totals */}
+          <div className="grid grid-cols-4 gap-4">
+            <StatCell label="Total" value={item.records ?? '—'} />
+            <StatCell label="Sucesso" value={item.created} />
+            <StatCell label="Erros" value={item.errors} />
+            {item.kind === 'import' ? (
+              <StatCell label="Duplicatas" value={item.duplicates} />
+            ) : (
+              <StatCell label="Retries" value={0} />
+            )}
+          </div>
+
+          {/* Stats row 2: dates */}
+          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-gray-100 pt-4 dark:border-white/[0.04] sm:grid-cols-3">
+            <StatCell label="Início" value={fmtDateTime(item.created_at)} />
+            <StatCell
+              label="Quem rodou"
+              value={userEmail ?? '—'}
+            />
+            {item.kind === 'import' && item.progress_pct < 100 && item.progress_pct > 0 && (
+              <StatCell label="Progresso" value={`${item.progress_pct}%`} />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────
+export default function DashboardPage() {
+  const { user } = useAuth()
+
+  const [timeRange, setTimeRange] = useState<TimeRange>('7d')
+  const [search, setSearch] = useState('')
+  const [kindFilter, setKindFilter] = useState<'' | 'export' | 'import'>('')
+
+  const { data: exportsData, refetch: refetchExports } = useQuery({
+    queryKey: ['dashboard-exports'],
+    queryFn: () => exportService.list(1, 100, {}),
     refetchInterval: 30_000,
   })
 
-  // Exports recentes (últimos 50 para merge local com imports)
-  const exportFilters = {
-    status: filters.status || undefined,
-    entity_type: filters.entity_type || undefined,
-    date_from: filters.date_from || undefined,
-    date_to: filters.date_to || undefined,
+  const { data: importsData, refetch: refetchImports } = useQuery({
+    queryKey: ['dashboard-imports'],
+    queryFn: () => importService.list(1, 100, {}),
+    refetchInterval: 30_000,
+  })
+
+  const allActivity = useMemo<ActivityItem[]>(
+    () =>
+      [
+        ...(exportsData?.items ?? []).map(toActivity),
+        ...(importsData?.items ?? []).map(toActivityImport),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [exportsData, importsData],
+  )
+
+  const filtered = useMemo(() => {
+    let items = filterByRange(allActivity, timeRange)
+    if (kindFilter) items = items.filter((i) => i.kind === kindFilter)
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      items = items.filter(
+        (i) =>
+          i.name.toLowerCase().includes(q) ||
+          (ENTITY_LABELS[i.entity_type] ?? i.entity_type).toLowerCase().includes(q),
+      )
+    }
+    return items
+  }, [allActivity, timeRange, kindFilter, search])
+
+  const grouped = useMemo(() => {
+    const groups: { key: string; label: string; items: ActivityItem[] }[] = []
+    for (const item of filtered) {
+      const key = groupKey(item.created_at)
+      const g = groups.find((x) => x.key === key)
+      if (g) g.items.push(item)
+      else groups.push({ key, label: groupLabel(item.created_at), items: [item] })
+    }
+    return groups
+  }, [filtered])
+
+  function handleExportCSV() {
+    const rows = [
+      ['Tipo', 'Nome', 'Entidade', 'Registros', 'Sucesso', 'Erros', 'Status', 'Data'],
+      ...filtered.map((i) => [
+        i.kind === 'export' ? 'Exportação' : 'Importação',
+        i.name,
+        ENTITY_LABELS[i.entity_type] ?? i.entity_type,
+        i.records ?? '',
+        i.created,
+        i.errors,
+        STATUS_CONFIG[i.status]?.label ?? i.status,
+        new Date(i.created_at).toLocaleString('pt-BR'),
+      ]),
+    ]
+    const csv = rows.map((r) => r.join(',')).join('\n')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    a.download = 'historico.csv'
+    a.click()
   }
 
-  const { data: exportsData } = useQuery({
-    queryKey: ['dashboard-exports', exportFilters],
-    queryFn: () => exportService.list(1, 50, exportFilters),
-    enabled: filters.kind !== 'import',
-  })
-
-  const { data: importsData } = useQuery({
-    queryKey: ['dashboard-imports', exportFilters],
-    queryFn: () => importService.list(1, 50, exportFilters),
-    enabled: filters.kind !== 'export',
-  })
-
-  // Merge e ordena por data desc
-  const activity: ActivityItem[] = [
-    ...(filters.kind !== 'import' ? (exportsData?.items ?? []).map(toActivity) : []),
-    ...(filters.kind !== 'export' ? (importsData?.items ?? []).map(toActivityImport) : []),
-  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-  const hasFilters = Object.values(filters).some((v) => v !== '')
-
-  const fmtDate = (iso: string) =>
-    new Date(iso).toLocaleString('pt-BR', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-
   return (
-    <div className="space-y-6">
-      {/* Cabeçalho */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-800">Dashboard</h2>
-        <p className="text-sm text-gray-500">Bem-vindo, {user?.full_name}</p>
-      </div>
-
-      {/* Cards de stat */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Conexões ativas"
-          value={loadingStats ? '—' : (stats?.active_connections ?? 0)}
-          icon={Link2}
-          color="bg-indigo-500"
-        />
-        <StatCard
-          label="Exportações"
-          value={loadingStats ? '—' : (stats?.total_exports ?? 0)}
-          sub={`${stats?.exports_completed ?? 0} concluídas · ${stats?.exports_processing ?? 0} em andamento`}
-          icon={Download}
-          color="bg-sky-500"
-        />
-        <StatCard
-          label="Importações"
-          value={loadingStats ? '—' : (stats?.total_imports ?? 0)}
-          sub={`${stats?.imports_completed ?? 0} concluídas · ${stats?.imports_processing ?? 0} em andamento`}
-          icon={Upload}
-          color="bg-violet-500"
-        />
-        <StatCard
-          label="Registros movimentados"
-          value={
-            loadingStats
-              ? '—'
-              : (stats?.total_records_exported ?? 0) + (stats?.total_records_imported ?? 0)
-          }
-          sub={`${(stats?.total_records_exported ?? 0).toLocaleString('pt-BR')} exp · ${(stats?.total_records_imported ?? 0).toLocaleString('pt-BR')} imp`}
-          icon={Database}
-          color="bg-emerald-500"
-        />
-      </div>
-
-      {/* Histórico de atividades */}
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        {/* Cabeçalho da tabela */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-          <h3 className="text-sm font-semibold text-gray-700">Histórico de Atividades</h3>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+            Histórico
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            Quem rodou cada automação, quando e com qual resultado.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-              hasFilters
-                ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
+            onClick={() => { refetchExports(); refetchImports() }}
+            className="flex items-center gap-1.5 rounded-[8px] border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:bg-white/[0.07]"
           >
-            {hasFilters ? <X size={13} /> : <Filter size={13} />}
-            {showFilters ? 'Fechar' : hasFilters ? 'Filtros ativos' : 'Filtros'}
+            <RefreshCw size={12} />
+            Atualizar
+          </button>
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 rounded-[8px] border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:bg-white/[0.07]"
+          >
+            <FileDown size={12} />
+            Exportar CSV
           </button>
         </div>
+      </div>
 
-        {/* Painel de filtros */}
-        {showFilters && (
-          <div className="border-b border-gray-100 bg-gray-50 px-5 py-4">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              {/* Tipo */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">Tipo</label>
-                <select
-                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs outline-none focus:border-indigo-400"
-                  value={filters.kind}
-                  onChange={(e) => setFilters((f) => ({ ...f, kind: e.target.value as Filters['kind'] }))}
-                >
-                  <option value="">Todos</option>
-                  <option value="export">Exportação</option>
-                  <option value="import">Importação</option>
-                </select>
-              </div>
+      {/* Time tabs */}
+      <div className="flex items-center gap-0.5">
+        {TIME_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setTimeRange(tab.key)}
+            className={`rounded-[7px] px-3 py-1.5 text-xs font-medium transition-colors ${
+              timeRange === tab.key
+                ? 'bg-gray-900 text-white dark:bg-white/[0.12] dark:text-white'
+                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-              {/* Status */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">Status</label>
-                <select
-                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs outline-none focus:border-indigo-400"
-                  value={filters.status}
-                  onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-                >
-                  <option value="">Todos</option>
-                  <option value="pending">Aguardando</option>
-                  <option value="processing">Processando</option>
-                  <option value="completed">Concluído</option>
-                  <option value="error">Erro</option>
-                  <option value="failed">Falhou</option>
-                  <option value="cancelled">Cancelado</option>
-                </select>
-              </div>
+      {/* Search + kind filter */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <Search
+            size={13}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+          />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar automação, pessoa ou arquivo"
+            className="h-9 w-full rounded-[8px] border border-gray-200 bg-white pl-8 pr-3 text-xs placeholder:text-gray-400 outline-none transition-colors focus:border-brand-500 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-brand-500"
+          />
+        </div>
+        <div className="relative">
+          <select
+            value={kindFilter}
+            onChange={(e) => setKindFilter(e.target.value as '' | 'export' | 'import')}
+            className="h-9 appearance-none rounded-[8px] border border-gray-200 bg-white pl-3 pr-7 text-xs text-gray-600 outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300"
+          >
+            <option value="">Todas as automações</option>
+            <option value="export">Exportação</option>
+            <option value="import">Importação</option>
+          </select>
+          <ChevronDown
+            size={12}
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+        </div>
+      </div>
 
-              {/* Entidade */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">Entidade</label>
-                <select
-                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs outline-none focus:border-indigo-400"
-                  value={filters.entity_type}
-                  onChange={(e) => setFilters((f) => ({ ...f, entity_type: e.target.value }))}
-                >
-                  <option value="">Todas</option>
-                  <option value="contact">Contatos</option>
-                  <option value="company">Empresas</option>
-                  <option value="deal">Negócios</option>
-                  <option value="activity">Atividades</option>
-                </select>
-              </div>
-
-              {/* Data início */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">De</label>
-                <input
-                  type="date"
-                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs outline-none focus:border-indigo-400"
-                  value={filters.date_from}
-                  onChange={(e) => setFilters((f) => ({ ...f, date_from: e.target.value }))}
-                />
-              </div>
-
-              {/* Data fim */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">Até</label>
-                <input
-                  type="date"
-                  className="h-8 rounded-md border border-gray-300 bg-white px-2 text-xs outline-none focus:border-indigo-400"
-                  value={filters.date_to}
-                  onChange={(e) => setFilters((f) => ({ ...f, date_to: e.target.value }))}
-                />
+      {/* Grouped list */}
+      {grouped.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white py-20 text-center dark:border-white/[0.06] dark:bg-white/[0.03]">
+          <Database size={32} className="text-gray-300 dark:text-gray-600" />
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+            Nenhuma atividade encontrada
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {grouped.map((group) => (
+            <div key={group.key}>
+              <p className="mb-2 text-[10px] font-bold tracking-widest text-gray-400 dark:text-gray-500">
+                {group.label}
+              </p>
+              <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-white/[0.06]">
+                {group.items.map((item, idx) => (
+                  <ActivityRow
+                    key={`${item.kind}-${item.id}`}
+                    item={item}
+                    isLast={idx === group.items.length - 1}
+                    userEmail={user?.email}
+                  />
+                ))}
               </div>
             </div>
-
-            {hasFilters && (
-              <button
-                onClick={() => setFilters(EMPTY_FILTERS)}
-                className="mt-3 text-xs text-indigo-600 hover:underline"
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Lista de atividades */}
-        {activity.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Database size={32} className="text-gray-300" />
-            <p className="mt-3 text-sm text-gray-500">
-              {hasFilters ? 'Nenhuma atividade para os filtros selecionados' : 'Nenhuma atividade ainda'}
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {activity.map((item) => (
-              <li
-                key={`${item.kind}-${item.id}`}
-                className="flex cursor-pointer items-center justify-between gap-4 px-5 py-3.5 hover:bg-gray-50"
-                onClick={() =>
-                  navigate(item.kind === 'import' ? `/imports/${item.id}` : '/export')
-                }
-              >
-                {/* Ícone de tipo */}
-                <div
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-                    item.kind === 'export'
-                      ? 'bg-sky-50 text-sky-600'
-                      : 'bg-violet-50 text-violet-600'
-                  }`}
-                >
-                  {item.kind === 'export' ? <Download size={15} /> : <Upload size={15} />}
-                </div>
-
-                {/* Info */}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-800">{item.name}</p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                      item.kind === 'export' ? 'bg-sky-50 text-sky-700' : 'bg-violet-50 text-violet-700'
-                    }`}>
-                      {item.kind === 'export' ? 'Exportação' : 'Importação'}
-                    </span>
-                    <span>·</span>
-                    <span>{ENTITY_LABELS[item.entity_type] ?? item.entity_type}</span>
-                    {item.records !== null && (
-                      <><span>·</span><span>{item.records.toLocaleString('pt-BR')} registros</span></>
-                    )}
-                    <span>·</span>
-                    <span>{fmtDate(item.created_at)}</span>
-                  </div>
-                </div>
-
-                {/* Status + seta */}
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[item.status] ?? ''}`}>
-                    {STATUS_LABELS[item.status] ?? item.status}
-                  </span>
-                  <ArrowRight size={14} className="text-gray-400" />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Rodapé com contagem */}
-        {activity.length > 0 && (
-          <div className="border-t border-gray-100 px-5 py-2.5 text-xs text-gray-400">
-            {activity.length} atividade{activity.length !== 1 ? 's' : ''} exibida{activity.length !== 1 ? 's' : ''}
-            {hasFilters && ' (filtros ativos)'}
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
