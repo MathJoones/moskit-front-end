@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Rehydrate: ao montar, verifica token existente
   useEffect(() => {
+    if (state.status === 'authenticated') return // already hydrated
     if (!authService.isAuthenticated()) {
       dispatch({ type: 'LOGOUT' })
       return
@@ -64,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .getMe()
       .then((user) => dispatch({ type: 'REHYDRATE', payload: user }))
       .catch(() => dispatch({ type: 'LOGOUT' }))
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = useCallback(async (email: string, password: string) => {
     dispatch({ type: 'LOADING' })

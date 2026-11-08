@@ -211,7 +211,7 @@ function ImportRow({ imp, onNavigate }: ImportRowProps) {
           {/* Configuração badges */}
           <div className="border-b border-gray-100 px-4 py-3 dark:border-white/[0.04]">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
-              Configuracao
+              Configuração
             </p>
             <div className="flex flex-wrap gap-1.5">
               <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11.5px] text-gray-600 dark:border-white/[0.07] dark:bg-white/[0.04] dark:text-gray-300">

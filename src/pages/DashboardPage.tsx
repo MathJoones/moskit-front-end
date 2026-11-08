@@ -57,6 +57,7 @@ interface ActivityItem {
   completed_at: string | null
   file_name: string | null
   output_format?: string | null
+  created_by: string
 }
 
 function toActivity(item: ExportListItem): ActivityItem {
@@ -67,7 +68,7 @@ function toActivity(item: ExportListItem): ActivityItem {
     entity_type: item.entity_type,
     status: item.status,
     records: item.total_records,
-    created: item.total_records ?? 0,
+    created: item.status === 'completed' ? (item.total_records ?? 0) : 0,
     duplicates: 0,
     errors: 0,
     progress_pct: item.status === 'completed' ? 100 : 0,
@@ -76,6 +77,7 @@ function toActivity(item: ExportListItem): ActivityItem {
     completed_at: item.completed_at ?? null,
     file_name: item.output_file_name ?? null,
     output_format: item.output_format,
+    created_by: item.created_by,
   }
 }
 
@@ -95,13 +97,14 @@ function toActivityImport(item: ImportListItem): ActivityItem {
     started_at: item.started_at ?? null,
     completed_at: item.completed_at ?? null,
     file_name: item.input_file_name ?? null,
+    created_by: item.created_by,
   }
 }
 
 // ── Date helpers ─────────────────────────────────────────────
 function groupKey(iso: string) {
   const d = new Date(iso)
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
 
 function groupLabel(iso: string) {
@@ -325,12 +328,12 @@ function ActivityRow({
                 item.kind === 'import' && item.file_name ? { k: 'Arquivo', v: item.file_name } : null,
                 item.kind === 'export' && item.output_format ? { k: 'Formato', v: item.output_format.toUpperCase() } : null,
                 item.kind === 'export' && item.file_name ? { k: 'Arquivo', v: item.file_name } : null,
-              ].filter(Boolean).map((b) => b && (
+              ].filter(Boolean).map((b) => (
                 <span
-                  key={b.k}
+                  key={b!.k}
                   className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11.5px] text-gray-600 dark:border-white/[0.07] dark:bg-white/[0.04] dark:text-gray-300"
                 >
-                  <span className="font-medium text-gray-400 dark:text-gray-500">{b.k}:</span> {b.v}
+                  <span className="font-medium text-gray-400 dark:text-gray-500">{b!.k}:</span> {b!.v}
                 </span>
               ))}
             </div>
@@ -397,6 +400,7 @@ export default function DashboardPage() {
   const filtered = useMemo(() => {
     let items = filterByRange(allActivity, timeRange)
     if (kindFilter) items = items.filter((i) => i.kind === kindFilter)
+    if (onlyMine && user?.id) items = items.filter((i) => i.created_by === user.id)
     if (search.trim()) {
       const q = search.toLowerCase()
       items = items.filter(
@@ -406,7 +410,7 @@ export default function DashboardPage() {
       )
     }
     return items
-  }, [allActivity, timeRange, kindFilter, search])
+  }, [allActivity, timeRange, kindFilter, onlyMine, user?.id, search])
 
   const grouped = useMemo(() => {
     const groups: { key: string; label: string; items: ActivityItem[] }[] = []
@@ -434,10 +438,12 @@ export default function DashboardPage() {
       ]),
     ]
     const csv = rows.map((r) => r.join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    a.href = url
     a.download = 'historico.csv'
     a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (

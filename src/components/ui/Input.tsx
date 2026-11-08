@@ -1,14 +1,15 @@
-import { forwardRef, InputHTMLAttributes, useId } from 'react'
+import { forwardRef, InputHTMLAttributes, ReactNode, useId } from 'react'
 import { cn } from '@/utils/cn'
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string
   error?: string
   hint?: string
+  rightAdornment?: ReactNode
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, label, error, hint, id: propId, ...props }, ref) => {
+  ({ className, label, error, hint, rightAdornment, id: propId, ...props }, ref) => {
     const generatedId = useId()
     const id = propId ?? generatedId
     const errorId = `${id}-error`
@@ -28,22 +29,30 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {label}
           </label>
         )}
-        <input
-          ref={ref}
-          id={id}
-          aria-describedby={describedBy}
-          aria-invalid={!!error}
-          className={cn(
-            'h-9 w-full rounded-[8px] border bg-white px-3 text-[13px] outline-none transition-colors placeholder:text-gray-400',
-            'dark:bg-[#20222d] dark:text-[#f4f5f8] dark:placeholder:text-[#50536a]',
-            'focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 dark:focus:ring-brand-500/30 dark:focus:border-brand-500',
-            error
-              ? 'border-red-500 focus:ring-red-500/40'
-              : 'border-gray-200 dark:border-[#2e3040]',
-            className,
+        <div className="relative">
+          <input
+            ref={ref}
+            id={id}
+            aria-describedby={describedBy}
+            aria-invalid={!!error}
+            className={cn(
+              'h-9 w-full rounded-[8px] border bg-white px-3 text-[13px] outline-none transition-colors placeholder:text-gray-400',
+              'dark:bg-[#20222d] dark:text-[#f4f5f8] dark:placeholder:text-[#50536a]',
+              'focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 dark:focus:ring-brand-500/30 dark:focus:border-brand-500',
+              error
+                ? 'border-red-500 focus:ring-red-500/40'
+                : 'border-gray-200 dark:border-[#2e3040]',
+              rightAdornment ? 'pr-9' : '',
+              className,
+            )}
+            {...props}
+          />
+          {rightAdornment && (
+            <div className="absolute inset-y-0 right-0 flex items-center pr-2.5">
+              {rightAdornment}
+            </div>
           )}
-          {...props}
-        />
+        </div>
         {hint && !error && (
           <p id={hintId} className="text-xs text-gray-400 dark:text-gray-500">
             {hint}

@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check, ChevronLeft, FileSpreadsheet, HelpCircle, RefreshCw, Upload,
 } from 'lucide-react'
@@ -133,6 +133,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 export default function ImportWizardPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -144,6 +145,7 @@ export default function ImportWizardPage() {
   // Arquivo
   const [file, setFile] = useState<File | null>(null)
   const [csvData, setCsvData] = useState<CsvData | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
 
   // Mapeamento
   const [mappings, setMappings] = useState<MappingRow[]>([])
@@ -179,7 +181,10 @@ export default function ImportWizardPage() {
         file!,
       )
     },
-    onSuccess: (job) => navigate(`/imports/${job.id}`),
+    onSuccess: (job) => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-imports'] })
+      navigate(`/imports/${job.id}`)
+    },
     onError:   (err: unknown) => setError(extractErrorMessage(err, 'Erro ao iniciar importação')),
   })
 
@@ -191,8 +196,20 @@ export default function ImportWizardPage() {
     setMappings([])
     setDedupFields(new Set())
     setError(null)
+    setFileError(null)
 
-    if (!f.name.match(/\.(csv|txt)$/i)) {
+    const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
+    if (f.size > MAX_SIZE) {
+      setFileError('Arquivo muito grande. Tamanho máximo: 20 MB.')
+      return
+    }
+
+    if (f.name.match(/\.(xlsx|xls)$/i)) {
+      setCsvData({ headers: [], preview: [], rowCount: 0 })
+      return
+    }
+
+    if (!f.name.match(/\.(csv|txt|xlsx|xls)$/i)) {
       setCsvData({ headers: [], preview: [], rowCount: 0 })
       return
     }
@@ -423,6 +440,12 @@ export default function ImportWizardPage() {
               }}
             />
 
+            {fileError && (
+              <div className="mb-3 rounded-[8px] bg-red-500/10 px-3 py-2 text-[12.5px] text-red-600 dark:text-red-400">
+                {fileError}
+              </div>
+            )}
+
             {!file ? (
               /* Drop zone vazio */
               <button
@@ -462,6 +485,8 @@ export default function ImportWizardPage() {
                     <p className="text-[12px] text-gray-400 dark:text-[#9298b2]">
                       {csvData && csvData.rowCount > 0
                         ? `${csvData.rowCount.toLocaleString('pt-BR')} linhas · ${csvData.headers.length} colunas`
+                        : csvData && file?.name.match(/\.(xlsx|xls)$/i)
+                        ? 'Arquivo Excel detectado — prévia não disponível, dados serão processados no servidor'
                         : csvData
                         ? 'Leitura no servidor após envio'
                         : 'Carregando...'}

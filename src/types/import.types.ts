@@ -63,6 +63,7 @@ export interface ImportListItem {
   started_at: string | null
   completed_at: string | null
   created_at: string
+  created_by: string
 }
 
 export interface CreateImportPayload {

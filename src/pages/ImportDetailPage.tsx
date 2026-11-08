@@ -54,6 +54,7 @@ export default function ImportDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['import', id],
@@ -70,11 +71,14 @@ export default function ImportDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['import', id] })
       queryClient.invalidateQueries({ queryKey: ['imports'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-imports'] })
     },
     onError: (err: unknown) => setError(extractErrorMessage(err, 'Erro ao cancelar')),
   })
 
   const handleDownload = async (type: ResultFileType) => {
+    if (downloading) return
+    setDownloading(true)
     try {
       const { blob, filename } = await importService.downloadResult(id!, type)
       triggerDownload(blob, filename)
@@ -83,6 +87,8 @@ export default function ImportDetailPage() {
         created: 'criados', duplicate: 'duplicatas', error: 'erros',
       }
       setError(`Erro ao baixar CSV de ${labels[type]}`)
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -230,13 +236,17 @@ export default function ImportDetailPage() {
                   return (
                     <button
                       key={type}
-                      onClick={() => handleDownload(type)}
-                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors ${bg}`}
+                      onClick={() => void handleDownload(type)}
+                      disabled={downloading}
+                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors disabled:opacity-60 ${bg}`}
                     >
                       <Icon size={16} />
                       <span className="flex-1 text-sm font-medium">{label}</span>
                       <span className="font-mono text-sm tabular-nums">{count.toLocaleString('pt-BR')}</span>
-                      <Download size={14} className="shrink-0 opacity-60" />
+                      {downloading
+                        ? <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        : <Download size={14} className="shrink-0 opacity-60" />
+                      }
                     </button>
                   )
                 })}

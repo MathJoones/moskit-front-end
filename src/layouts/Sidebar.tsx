@@ -101,7 +101,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             </p>
           </div>
           <button
-            onClick={logout}
+            onClick={() => { void logout() }}
             aria-label="Sair"
             title="Sair"
             className="rounded-[7px] p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-[#9298b2] dark:hover:bg-white/[0.06] dark:hover:text-white"

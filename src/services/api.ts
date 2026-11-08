@@ -75,7 +75,7 @@ api.interceptors.response.use(
     if (originalRequest.url?.includes('/auth/refresh')) {
       storage.remove('access_token')
       storage.remove('refresh_token')
-      window.location.href = '/login'
+      window.location.replace('/login')
       return Promise.reject(error)
     }
 
@@ -95,7 +95,7 @@ api.interceptors.response.use(
     const refreshToken = storage.get<string>('refresh_token')
     if (!refreshToken) {
       isRefreshing = false
-      window.location.href = '/login'
+      window.location.replace('/login')
       return Promise.reject(error)
     }
 
@@ -109,7 +109,7 @@ api.interceptors.response.use(
       processQueue(refreshError, null)
       storage.remove('access_token')
       storage.remove('refresh_token')
-      window.location.href = '/login'
+      window.location.replace('/login')
       return Promise.reject(refreshError)
     } finally {
       isRefreshing = false

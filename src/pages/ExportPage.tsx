@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/useAuth'
 import { Download, RefreshCw, Plus, X, Filter, ChevronDown } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
@@ -37,11 +38,11 @@ const FORMAT_LABELS: Record<ExportFormat, string> = {
   json: 'JSON',
 }
 
-const STATUS_CONFIG: Record<string, { label: string; pill: string; bar: string }> = {
-  pending:    { label: 'Aguardando',  pill: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400',    bar: 'bg-yellow-400' },
-  processing: { label: 'Processando', pill: 'bg-brand-500/15 text-brand-700 dark:text-brand-400',       bar: 'bg-brand-400' },
-  completed:  { label: 'Concluído',   pill: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-400' },
-  failed:     { label: 'Falhou',      pill: 'bg-red-500/15 text-red-600 dark:text-red-400',             bar: 'bg-red-400' },
+const STATUS_CONFIG: Record<string, { label: string; pill: string; bar: string; text: string }> = {
+  pending:    { label: 'Aguardando',  pill: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400',    bar: 'bg-yellow-400',   text: 'text-yellow-600 dark:text-yellow-400' },
+  processing: { label: 'Processando', pill: 'bg-brand-500/15 text-brand-700 dark:text-brand-400',       bar: 'bg-brand-400',    text: 'text-brand-700 dark:text-brand-400' },
+  completed:  { label: 'Concluído',   pill: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-400',  text: 'text-emerald-700 dark:text-emerald-400' },
+  failed:     { label: 'Falhou',      pill: 'bg-red-500/15 text-red-600 dark:text-red-400',             bar: 'bg-red-400',      text: 'text-red-600 dark:text-red-400' },
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -83,9 +84,11 @@ function StatCell({ label, value }: { label: string; value: string | number }) {
 interface ExportRowProps {
   exp: ExportListItem
   onDownload: (id: string) => void
+  currentUserId?: string
+  currentUserEmail?: string
 }
 
-function ExportRow({ exp, onDownload }: ExportRowProps) {
+function ExportRow({ exp, onDownload, currentUserId, currentUserEmail }: ExportRowProps) {
   const [open, setOpen] = useState(false)
   const st = STATUS_CONFIG[exp.status] ?? STATUS_CONFIG.failed
 
@@ -166,7 +169,7 @@ function ExportRow({ exp, onDownload }: ExportRowProps) {
               <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
                 Status
               </p>
-              <p className={`mt-1 text-xl font-bold font-mono tabular-nums ${st.pill.split(' ').filter(c => c.startsWith('text-')).join(' ')}`}>
+              <p className={`mt-1 text-xl font-bold font-mono tabular-nums ${st.text}`}>
                 {st.label}
               </p>
             </div>
@@ -186,8 +189,8 @@ function ExportRow({ exp, onDownload }: ExportRowProps) {
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-gray-100 px-4 py-3 dark:border-white/[0.04] sm:grid-cols-4">
             <StatCell label="Início" value={fmtDateTime(exp.started_at ?? exp.created_at)} />
             <StatCell label="Fim" value={exp.completed_at ? fmtDateTime(exp.completed_at) : '—'} />
-            <StatCell label="Duração" value={calcDuration(exp.started_at, exp.completed_at)} />
-            <StatCell label="Arquivo" value={exp.output_file_name ?? '—'} />
+            <StatCell label="Duração"     value={calcDuration(exp.started_at, exp.completed_at)} />
+            <StatCell label="Quem rodou" value={exp.created_by === currentUserId ? (currentUserEmail ?? '—') : '—'} />
           </div>
 
           {/* Configuração */}
@@ -242,6 +245,7 @@ const EMPTY_EXPORT_FILTERS: ExportFilters = { status: '', entity_type: '', date_
 
 // ── Page ────────────────────────────────────────────────────
 export default function ExportPage() {
+  const { user } = useAuth()
   const [showForm, setShowForm] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [exportFilters, setExportFilters] = useState<ExportFilters>(EMPTY_EXPORT_FILTERS)
@@ -286,6 +290,7 @@ export default function ExportPage() {
     mutationFn: exportService.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exports'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-exports'] })
       reset()
       setShowForm(false)
       setError(null)
@@ -556,7 +561,7 @@ export default function ExportPage() {
         ) : (
           <div className="divide-y divide-gray-100 dark:divide-white/[0.04] stagger-children">
             {exports.map((exp) => (
-              <ExportRow key={exp.id} exp={exp} onDownload={handleDownload} />
+              <ExportRow key={exp.id} exp={exp} onDownload={handleDownload} currentUserId={user?.id} currentUserEmail={user?.email} />
             ))}
           </div>
         )}
